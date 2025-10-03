@@ -1,14 +1,9 @@
 import os
-import asyncio
+import threading
 from fastapi import FastAPI
 import uvicorn
 from telegram import Update
-from telegram.ext import (
-    Application,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import Updater, MessageHandler, Filters, CallbackContext
 
 # -------------------- ENV VARIABLES --------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
@@ -20,20 +15,17 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"message": "Bot is running on Render!"}
+    return {"message": "Bot is running on Render (PTB v13)!"}
 
 @app.get("/ping")
 def ping():
     return {"status": "alive"}
 
-# -------------------- TELEGRAM APP --------------------
-telegram_app = Application.builder().token(BOT_TOKEN).build()
-
-# --- Handlers ---
-async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# -------------------- TELEGRAM BOT --------------------
+def handle_new_chat_members(update: Update, context: CallbackContext):
     chat = update.effective_chat
     for member in update.message.new_chat_members:
-        if member.id == context.bot.id:  # Bot added
+        if member.id == context.bot.id:  # Bot itself added
             adder = update.message.from_user
             log_message = (
                 f"📢 Bot was added to a group!\n\n"
@@ -42,10 +34,10 @@ async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_
                 f"(@{adder.username or 'NoUsername'})\n"
                 f"🆔 User ID: {adder.id}"
             )
-            await context.bot.send_message(LOG_CHAT_ID, log_message)
+            context.bot.send_message(LOG_CHAT_ID, log_message)
 
             if adder.id != OWNER_ID:
-                await context.bot.send_message(
+                context.bot.send_message(
                     chat.id,
                     "⚠️ 您好，机器人已检测到加入了新群组，正在初始化新群组，请稍候..."
                 )
@@ -56,25 +48,24 @@ async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_
                     f"(@{adder.username or 'NoUsername'})\n"
                     f"🆔 User ID: {adder.id}"
                 )
-                await context.bot.send_message(LOG_CHAT_ID, leave_message)
-                await context.bot.leave_chat(chat.id)
+                context.bot.send_message(LOG_CHAT_ID, leave_message)
+                context.bot.leave_chat(chat.id)
             else:
-                await context.bot.send_message(chat.id, "✅ Bot initialized successfully.")
+                context.bot.send_message(chat.id, "✅ Bot initialized successfully.")
 
-telegram_app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
+def run_telegram_bot():
+    updater = Updater(BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-# -------------------- BACKGROUND BOT TASK --------------------
-async def run_bot():
-    """Run the Telegram bot in background forever"""
-    await telegram_app.initialize()
-    await telegram_app.start()
-    await telegram_app.updater.start_polling()
-    await asyncio.Event().wait()  # prevent exit
+    dp.add_handler(MessageHandler(Filters.status_update.new_chat_members, handle_new_chat_members))
 
-# -------------------- MAIN ENTRY --------------------
+    updater.start_polling()
+    updater.idle()
+
+# -------------------- ENTRY POINT --------------------
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(run_bot())  # bot in background
+    # Run Telegram bot in separate thread
+    threading.Thread(target=run_telegram_bot, daemon=True).start()
 
-    # Run FastAPI server (needed for Render + UptimeRobot)
+    # Run FastAPI (keeps Render alive & UptimeRobot ping works)
     uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
