@@ -1,15 +1,11 @@
 import os
 from telegram import Update
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
-from fastapi import FastAPI, Request
-import uvicorn
 
+# Bot token and settings (from Render env vars)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "7124683213"))
 LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID", "7124683213"))
-
-app = FastAPI()
-application = Application.builder().token(BOT_TOKEN).build()
 
 async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -37,15 +33,12 @@ async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_
             else:
                 await context.bot.send_message(chat.id, "✅ Bot initialized successfully.")
 
-application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
 
-@app.post("/")
-async def webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, application.bot)
-    await application.process_update(update)
-    return {"ok": True}
+    # This will run polling (works fine on Render)
+    app.run_polling()
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run("main:app", host="0.0.0.0", port=port)
+    main()
