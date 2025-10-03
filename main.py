@@ -4,22 +4,22 @@ import uvicorn
 from telegram import Update
 from telegram.ext import Application, MessageHandler, ContextTypes, filters
 
-# Bot token and settings
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
-OWNER_ID = int(os.getenv("OWNER_ID", "7124683213"))
-LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID", "7124683213"))
+# Load bot credentials
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID", "YOUR_OWNER_ID"))
+LOG_CHAT_ID = int(os.getenv("LOG_CHAT_ID", "YOUR_LOG_CHAT_ID"))
 
 # Create FastAPI app
 app = FastAPI()
 
-# Create Telegram Application
+# Create PTB Application
 telegram_app = Application.builder().token(BOT_TOKEN).build()
 
-# --- Handlers ---
+# --- Telegram Handlers ---
 async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     for member in update.message.new_chat_members:
-        if member.id == context.bot.id:  # Bot was added
+        if member.id == context.bot.id:  # Bot added
             adder = update.message.from_user
             log_message = (
                 f"📢 Bot was added to a group!\n\n"
@@ -42,22 +42,25 @@ async def handle_new_chat_members(update: Update, context: ContextTypes.DEFAULT_
             else:
                 await context.bot.send_message(chat.id, "✅ Bot initialized successfully.")
 
-telegram_app.add_handler(
-    MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members)
-)
+telegram_app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_chat_members))
 
-# --- Webhook Endpoint ---
+# --- Webhook route ---
 @app.post("/")
-async def webhook(request: Request):
+async def telegram_webhook(request: Request):
     data = await request.json()
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return {"ok": True}
 
-# --- Startup Hook: set webhook when service starts ---
+# --- Keepalive route ---
+@app.get("/ping")
+async def ping():
+    return {"status": "alive"}
+
+# --- Startup: set webhook ---
 @app.on_event("startup")
 async def on_startup():
-    webhook_url = os.getenv("RENDER_EXTERNAL_URL")  # Render provides this
+    webhook_url = os.getenv("RENDER_EXTERNAL_URL")
     if webhook_url:
         await telegram_app.bot.set_webhook(f"{webhook_url}/")
 
